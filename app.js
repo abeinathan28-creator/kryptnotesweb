@@ -216,6 +216,8 @@ async function loadAndDecryptLocalStorage() {
 async function saveAndEncryptLocalStorage() {
     if (!activeSecretKey) return;
     
+    localStorage.setItem("last_local_modification_time", Date.now().toString());
+    
     // 1. Save notes encrypted
     const encryptedNotesEntities = [];
     for (let note of notes) {
@@ -318,6 +320,71 @@ async function syncToCloud() {
     updateSyncSpinner(true);
     
     try {
+        const hash = await hashEmail(protonAccountEmail);
+        const fullUrl = getActiveSyncUrl(hash);
+
+        // 1. Fetch current cloud backup to check timestamp
+        let serverBackup = null;
+        try {
+            const getResponse = await fetch(fullUrl);
+            if (getResponse.ok) {
+                serverBackup = await getResponse.json();
+            }
+        } catch(err) {
+            console.warn("Could not retrieve current cloud backup, assuming upload is safe:", err);
+        }
+
+        const localModTime = parseInt(localStorage.getItem("last_local_modification_time") || "0", 10);
+        
+        if (serverBackup && serverBackup.backupTime && serverBackup.backupTime > localModTime) {
+            // Cloud is newer -> Pull/Restore from Cloud
+            const valText = await decryptText(serverBackup.encryptedValidation, activeSecretKey);
+            if (valText === "KEEP_NOTES_SECURE_VAL") {
+                localStorage.setItem("crypto_salt", serverBackup.saltBase64);
+                localStorage.setItem("crypto_validation", serverBackup.encryptedValidation);
+                localStorage.setItem("proton_sync_email", protonAccountEmail);
+
+                // Fetch and parse lists
+                const backupEntities = JSON.parse(serverBackup.encryptedNotesJson || "[]");
+                const newNotes = [];
+                for (let e of backupEntities) {
+                    const note = await decryptEntity(e, activeSecretKey);
+                    newNotes.push(note);
+                }
+                notes = newNotes;
+
+                try {
+                    const bLabels = JSON.parse(serverBackup.labelsJson || "[]");
+                    labels = bLabels.map(l => l.name);
+                } catch(e) { console.error(e); }
+
+                // Save to local storage silently (without modifying last_local_modification_time!)
+                const encryptedNotesEntities = [];
+                for (let note of notes) {
+                    const entity = await encryptToEntity(note, activeSecretKey);
+                    encryptedNotesEntities.push(entity);
+                }
+                localStorage.setItem("notes_encrypted_db", JSON.stringify(encryptedNotesEntities));
+                
+                const labelsRawText = JSON.stringify(labels);
+                const encLabelsBase64 = await encryptText(labelsRawText, activeSecretKey);
+                localStorage.setItem("labels_encrypted", encLabelsBase64);
+
+                // Update the local modification time to sync with cloud
+                localStorage.setItem("last_local_modification_time", serverBackup.backupTime.toString());
+
+                // Trigger UI update
+                renderNotes();
+                renderSidebarLabels();
+                
+                isSyncInProgress = false;
+                updateSyncSpinner(false);
+                showBannerNotification("CONNECTED • PULLED NEWER VERSION FROM CLOUD", true);
+                return true;
+            }
+        }
+
+        // If cloud backup doesn't exist, our local is newer, or validation failed -> Push our local state
         const eNotes = [];
         for (let note of notes) {
             const e = await encryptToEntity(note, activeSecretKey);
@@ -326,18 +393,17 @@ async function syncToCloud() {
         
         const saltBase64 = localStorage.getItem("crypto_salt");
         const encryptedValidation = localStorage.getItem("crypto_validation");
-        
+        const newBackupTime = Date.now();
+
         const backupPayload = {
             protonEmail: protonAccountEmail,
             saltBase64: saltBase64,
             encryptedValidation: encryptedValidation,
             encryptedNotesJson: JSON.stringify(eNotes),
             labelsJson: JSON.stringify(labels.map(l => ({ name: l, timestamp: Date.now() }))),
-            backupTime: Date.now()
+            backupTime: newBackupTime
         };
 
-        const hash = await hashEmail(protonAccountEmail);
-        const fullUrl = getActiveSyncUrl(hash);
         const methodType = isKvdbUrl() ? 'POST' : 'PUT';
 
         const response = await fetch(fullUrl, {
@@ -350,6 +416,7 @@ async function syncToCloud() {
 
         if (response.ok) {
             console.log("E2EE sync succeeded with cloud!");
+            localStorage.setItem("last_local_modification_time", newBackupTime.toString());
             isSyncInProgress = false;
             updateSyncSpinner(false);
             showBannerNotification("CONNECTED • CLOUD SYNCED SUCCESSFULLY", true);
@@ -804,6 +871,13 @@ function closeAndSaveModal() {
     }
     
     note.lastModified = Date.now();
+    
+    if (currentFilter && currentFilter.startsWith("label-")) {
+        const labelName = currentFilter.substring("label-".length);
+        if (!note.labels.includes(labelName)) {
+            note.labels.push(labelName);
+        }
+    }
     
     // Save to local & cloud sync
     saveAndEncryptLocalStorage().then(() => {
@@ -1733,13 +1807,21 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        const activeLabels = [...takeNoteLabels];
+        if (currentFilter && currentFilter.startsWith("label-")) {
+            const labelName = currentFilter.substring("label-".length);
+            if (!activeLabels.includes(labelName)) {
+                activeLabels.push(labelName);
+            }
+        }
+
         const note = {
             id: Date.now(),
             title: termTitle,
             content: cleanContent,
             isChecklist: takeNoteIsChecklist,
             checklistItems: finalChecklist,
-            labels: [...takeNoteLabels],
+            labels: activeLabels,
             colorHex: takeNoteColor,
             isPinned: isPinnedForm,
             isArchived: false,
@@ -1975,5 +2057,102 @@ document.addEventListener("DOMContentLoaded", () => {
             syncToCloud();
         }
     }, 30000);
+
+    // --- AUTOMATIC NUMBERED LIST GENERATOR AND INDENT CONTROL ---
+    function setupNoteIndentationAutoList(textarea) {
+        if (!textarea) return;
+        textarea.addEventListener("keydown", (e) => {
+            const start = textarea.selectionStart;
+            const value = textarea.value;
+
+            // Find current line text up to the cursor
+            const lastNewline = value.lastIndexOf("\n", start - 1);
+            const lineStart = lastNewline + 1;
+            const currentLine = value.substring(lineStart, start);
+
+            if (e.key === " ") {
+                // Check if they typed "1." or "  1." and pressed space
+                const match = currentLine.match(/^(\s*)([0-9]+)\.$/);
+                if (match) {
+                    e.preventDefault();
+                    const spaces = match[1];
+                    const num = match[2];
+                    const indent = spaces.length >= 4 ? spaces : "    ";
+                    const insertText = `${indent}${num}. `;
+                    
+                    // Replace from lineStart to start with insertText
+                    textarea.value = value.substring(0, lineStart) + insertText + value.substring(start);
+                    textarea.selectionStart = textarea.selectionEnd = lineStart + insertText.length;
+                    
+                    // Trigger input event to update raw model/state
+                    textarea.dispatchEvent(new Event("input"));
+                }
+            } else if (e.key === "Enter") {
+                // Check if they pressed enter on an empty bullet e.g. "    2. "
+                if (currentLine.match(/^(\s*)([0-9]+)\.\s+$/)) {
+                    e.preventDefault();
+                    // Clear the current line by replacing it with a newline or empty string
+                    const insertText = "\n";
+                    textarea.value = value.substring(0, lineStart) + insertText + value.substring(start);
+                    textarea.selectionStart = textarea.selectionEnd = lineStart + insertText.length;
+                    
+                    textarea.dispatchEvent(new Event("input"));
+                } else {
+                    // Check if they pressed enter on a filled bullet e.g. "    2. hello"
+                    const match = currentLine.match(/^(\s*)([0-9]+)\.\s+(.+)$/);
+                    if (match) {
+                        e.preventDefault();
+                        const spaces = match[1];
+                        const num = parseInt(match[2], 10);
+                        const prefix = spaces.length >= 4 ? spaces : "    ";
+                        const insertText = `\n${prefix}${num + 1}. `;
+                        
+                        textarea.value = value.substring(0, start) + insertText + value.substring(start);
+                        textarea.selectionStart = textarea.selectionEnd = start + insertText.length;
+                        
+                        textarea.dispatchEvent(new Event("input"));
+                    }
+                }
+            }
+        });
+    }
+
+    // Bind auto-list formatting functions to note textareas
+    setupNoteIndentationAutoList(document.getElementById("modal-content"));
+    setupNoteIndentationAutoList(document.getElementById("expanded-content"));
+
+    // --- SHORTCUT: KEYBOARD PRESS ENTER TO LOGIN/RESTORE VAULT ---
+    const unlockPassField = document.getElementById("unlock-password");
+    if (unlockPassField) {
+        unlockPassField.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                document.getElementById("btn-unlock-vault").click();
+            }
+        };
+    }
+    const restorePassField = document.getElementById("restore-password");
+    if (restorePassField) {
+        restorePassField.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                document.getElementById("btn-restore-vault").click();
+            }
+        };
+    }
+
+    // --- COHESIVE SYSTEM-WIDE EVENT DELEGATION: SIDEBAR NAVIGATION FILTER CLICKS ---
+    document.querySelectorAll(".sidebar-item[data-filter]").forEach(el => {
+        el.onclick = () => {
+            const filterName = el.getAttribute("data-filter");
+            selectSidebarFilter(filterName);
+
+            // Close sidebar drawer overlay on mobile screens
+            const sidebar = document.getElementById("sidebar");
+            const backdrop = document.getElementById("sidebar-backdrop");
+            if (sidebar) sidebar.classList.add("-translate-x-full");
+            if (backdrop) backdrop.classList.add("hidden");
+        };
+    });
 
 });
