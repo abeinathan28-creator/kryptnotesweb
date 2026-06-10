@@ -1185,7 +1185,7 @@ function updateSyncBadges() {
     const profilePic = document.getElementById("profile-pic-icon");
 
     if (protonAccountEmail) {
-        syncBtn.classList.remove("hidden");
+        if (syncBtn) syncBtn.classList.remove("hidden");
         statusText.innerText = "END-TO-END ENCRYPTED • PROTON CLOUD ACTIVE";
         linkedMailDisp.innerText = protonAccountEmail;
         statusActiveBox.classList.remove("hidden");
@@ -1193,7 +1193,7 @@ function updateSyncBadges() {
         profilePic.innerText = "cloud";
         profilePic.classList.add("text-purple-500");
     } else {
-        syncBtn.classList.add("hidden");
+        if (syncBtn) syncBtn.classList.add("hidden");
         statusText.innerText = "END-TO-END ENCRYPTED • SECURE LOCAL STORAGE";
         statusActiveBox.classList.add("hidden");
         statusInactiveBox.classList.remove("hidden");
@@ -1239,6 +1239,7 @@ function updateRestoreButton(isLoading) {
 
 function updateSyncSpinner(isSpinner) {
     const icon = document.getElementById("sync-icon");
+    if (!icon) return;
     if (isSpinner) {
         icon.classList.add("animate-spin");
         icon.innerText = "autorenew";
@@ -1492,9 +1493,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     // Wire: Manual Cloud Sync trigger Button
-    document.getElementById("btn-sync-now").onclick = () => {
-        syncToCloud();
-    };
+    const btnSyncNow = document.getElementById("btn-sync-now");
+    if (btnSyncNow) {
+        btnSyncNow.onclick = () => {
+            syncToCloud();
+        };
+    }
 
     // Wire: Master Labels editor manager
     document.getElementById("btn-manage-labels-sidebar").onclick = () => {
@@ -1964,5 +1968,12 @@ document.addEventListener("DOMContentLoaded", () => {
             syncToCloud();
         });
     }
+
+    // Continuous background synchronization cycle: checks and syncs every 30 seconds
+    setInterval(() => {
+        if (protonAccountEmail && activeSecretKey) {
+            syncToCloud();
+        }
+    }, 30000);
 
 });
