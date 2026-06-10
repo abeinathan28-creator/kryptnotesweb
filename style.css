@@ -1,0 +1,141 @@
+/* Google Keep Custom Stylings & Animations Overrides */
+
+/* Scrollbars styling */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.2);
+    border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(156, 163, 175, 0.4);
+}
+
+/* Base Font Override */
+body {
+    font-family: 'Roboto', sans-serif;
+}
+.font-display {
+    font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Animations */
+@keyframes spinOnce {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.animate-spin-once {
+    animation: spinOnce 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Responsive grid overrides */
+.notes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    transition: all 0.3s ease;
+}
+
+.notes-list-layout {
+    display: flex;
+    flex-direction: column;
+    max-width: 600px;
+    margin: 0 auto !important;
+    gap: 10px;
+}
+
+/* Navigation items active class */
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 9999px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #4b5563; /* grey-600 */
+    transition: all 0.2s ease;
+    user-select: none;
+}
+.dark .sidebar-item {
+    color: #9ca3af; /* grey-400 */
+}
+
+.sidebar-item:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+.dark .sidebar-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-item.active {
+    background-color: rgba(251, 192, 45, 0.15); /* KeepGold soft */
+    color: #b7791f; /* dark gold */
+    font-weight: 700;
+}
+.dark .sidebar-item.active {
+    background-color: rgba(251, 192, 45, 0.2);
+    color: #fbc02d; /* KeepGold */
+}
+
+.sidebar-label {
+    letter-spacing: 0.1px;
+}
+
+/* Hover-controls of notes cards */
+.note-control-btn {
+    opacity: 0;
+    transition: opacity 0.15s ease-in-out;
+}
+.note-card:hover .note-control-btn {
+    opacity: 1;
+}
+
+/* Modal states smooth zoom entry */
+#note-editor-modal.active #modal-card {
+    transform: scale(1);
+    opacity: 1;
+}
+
+/* Custom background palette color styles (Light/Dark themes) */
+.note-bg-default { background-color: #ffffff; border-color: #e5e7eb; }
+.dark .note-bg-default { background-color: #1f1f1f; border-color: #374151; }
+
+.note-bg-red { background-color: #fce8e6; border-color: #f28b82; }
+.dark .note-bg-red { background-color: #5c2b29; border-color: #8c3e3a; }
+
+.note-bg-orange { background-color: #feefc3; border-color: #fbbc04; }
+.dark .note-bg-orange { background-color: #614a19; border-color: #926f25; }
+
+.note-bg-yellow { background-color: #fffbcc; border-color: #fff475; }
+.dark .note-bg-yellow { background-color: #42371c; border-color: #5f4b1b; }
+
+.note-bg-green { background-color: #e8f0fe; border-color: #ccff90; }
+.dark .note-bg-green { background-color: #345920; border-color: #4d8030; }
+
+.note-bg-teal { background-color: #e4fbf5; border-color: #a7ffeb; }
+.dark .note-bg-teal { background-color: #16504b; border-color: #22776e; }
+
+.note-bg-blue { background-color: #e8f0fe; border-color: #cbf0f8; }
+.dark .note-bg-blue { background-color: #2d555e; border-color: #417b87; }
+
+.note-bg-dark_blue { background-color: #d1e3fa; border-color: #aecbfa; }
+.dark .note-bg-dark_blue { background-color: #1e3a5f; border-color: #2b5282; }
+
+.note-bg-purple { background-color: #f3e8fd; border-color: #d7aefb; }
+.dark .note-bg-purple { background-color: #42275e; border-color: #633b8a; }
+
+.note-bg-pink { background-color: #fce4ec; border-color: #fdcfe8; }
+.dark .note-bg-pink { background-color: #5b2245; border-color: #853165; }
+
+.note-bg-brown { background-color: #f6eaf0; border-color: #e6c9a8; }
+.dark .note-bg-brown { background-color: #442f19; border-color: #644525; }
+
+.note-bg-grey { background-color: #f1f3f4; border-color: #e8eaed; }
+.dark .note-bg-grey { background-color: #2e3440; border-color: #4c566a; }
